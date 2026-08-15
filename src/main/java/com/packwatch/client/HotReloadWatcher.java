@@ -36,6 +36,8 @@ public class HotReloadWatcher {
     private final AtomicBoolean dirty = new AtomicBoolean(false);
     private final Set<Path> dirtyFiles = new LinkedHashSet<Path>();
     private final AtomicBoolean forceFullReload = new AtomicBoolean(false);
+    // Last content hash seen per file, to drop byte-identical re-saves. Only ever touched on the watcher thread.
+    private final Map<Path, Long> lastContentHash = new HashMap<Path, Long>();
 
     public HotReloadWatcher() {
         try {
@@ -207,6 +209,16 @@ public class HotReloadWatcher {
                 // being dragged into a full reload by the metadata. Pure java.nio, so this stays MC-API-free.
                 if (!isUnderAssets(child)) continue;
 
+                // Content de-dupe: export tools (and some editors) rewrite files -- a CTM .properties, a texture's
+                // .mcmeta, even the tile PNGs -- on every save, frequently with byte-identical content. Skip an
+                // event whose bytes match what we last saw for this path, so a re-saved-but-unchanged .properties
+                // no longer drags the whole batch into a full reload; a genuine edit (different bytes) still flows
+                // through. Only meaningful for MODIFY -- create/delete change which files exist, not just content.
+                if (event.kind() == StandardWatchEventKinds.ENTRY_MODIFY) {
+                    Long hash = hashFile(child);
+                    if (hash != null && hash.equals(lastContentHash.put(child, hash))) continue;
+                }
+
                 // A file appearing/disappearing changes which sprites exist at all, not just their pixels --
                 // SpritePatcher can only safely patch an existing, still-registered sprite's data in place.
                 if (event.kind() != StandardWatchEventKinds.ENTRY_MODIFY) {
@@ -248,5 +260,24 @@ public class HotReloadWatcher {
                 return true;
         }
         return false;
+    }
+
+    /**
+     * A 64-bit FNV-1a hash of the file's bytes, or {@code null} if it can't be read right now (locked mid-write,
+     * a directory, already gone) -- in which case the caller treats it as changed and lets the normal path deal
+     * with it. Cheap and collision-resistant enough for its only job: recognising a byte-identical re-save.
+     */
+    private static Long hashFile(Path file) {
+        try {
+            byte[] bytes = Files.readAllBytes(file);
+            long hash = 0xcbf29ce484222325L;
+            for (byte b : bytes) {
+                hash ^= (b & 0xff);
+                hash *= 0x100000001b3L;
+            }
+            return hash;
+        } catch (IOException e) {
+            return null;
+        }
     }
 }

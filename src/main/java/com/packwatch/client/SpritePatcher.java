@@ -83,16 +83,33 @@ public final class SpritePatcher {
                 break;
             }
         }
-        // assets / <domain> / textures / <blocks|items> / <rest...>
-        if (assetsIdx < 0 || changedFile.getNameCount() <= assetsIdx + 4)
-            return bail(changedFile, "not under assets/<domain>/textures/<blocks|items>/");
-        if (!"textures".equals(
-            changedFile.getName(assetsIdx + 2)
-                .toString()))
-            return bail(changedFile, "not under a textures/ directory");
+        // Need at least assets/<domain>/<category>/... to classify the change.
+        if (assetsIdx < 0 || changedFile.getNameCount() <= assetsIdx + 2)
+            return bail(changedFile, "not under assets/<domain>/");
 
         String domain = changedFile.getName(assetsIdx + 1)
             .toString();
+        String category = changedFile.getName(assetsIdx + 2)
+            .toString();
+
+        // MCPatcherForge connected-texture tiles live under assets/<domain>/mcpatcher/ctm/... (or optifine/ctm/).
+        // They aren't in the vanilla textures/ tree, but MCPatcher stitches each tile straight into the *block*
+        // atlas under the name "<domain>:<path below assets/domain>" -- extension kept, e.g.
+        // "minecraft:mcpatcher/ctm/machine_top/4.png". Same atlas, same in-place patch as any block sprite.
+        if (("mcpatcher".equals(category) || "optifine".equals(category)) && hasSegment(changedFile, "ctm")) {
+            String relFromDomain = joinSegments(changedFile, assetsIdx + 2); // mcpatcher/ctm/machine_top/4.png
+            TextureMap blocks = mc.getTextureMapBlocks();
+            TextureAtlasSprite sprite = blocks.getTextureExtry(domain + ":" + relFromDomain);
+            if (sprite == null)
+                return bail(changedFile, "CTM tile '" + domain + ":" + relFromDomain + "' is not a registered sprite");
+            return applyPatch(blocks, sprite, new ResourceLocation(domain, relFromDomain), changedFile);
+        }
+
+        // Vanilla-style block/item texture: assets/<domain>/textures/<blocks|items>/<rest...>.
+        if (!"textures".equals(category)) return bail(changedFile, "not under a textures/ or mcpatcher/ctm/ path");
+        if (changedFile.getNameCount() <= assetsIdx + 4)
+            return bail(changedFile, "not under assets/<domain>/textures/<blocks|items>/");
+
         String typeDir = changedFile.getName(assetsIdx + 3)
             .toString();
 
@@ -108,14 +125,7 @@ public final class SpritePatcher {
             return bail(changedFile, "'" + typeDir + "' is not the blocks or items atlas");
         }
 
-        StringBuilder relBuilder = new StringBuilder();
-        for (int i = assetsIdx + 4; i < changedFile.getNameCount(); i++) {
-            if (relBuilder.length() > 0) relBuilder.append('/');
-            relBuilder.append(
-                changedFile.getName(i)
-                    .toString());
-        }
-        String rel = relBuilder.toString();
+        String rel = joinSegments(changedFile, assetsIdx + 4); // foo/bar.png
         if (!rel.endsWith(".png")) return bail(changedFile, "not a .png");
         rel = rel.substring(0, rel.length() - 4);
 
@@ -129,10 +139,24 @@ public final class SpritePatcher {
         }
         if (sprite == null) return bail(changedFile, "'" + iconName + "' is not a currently-registered sprite");
 
+        return applyPatch(
+            map,
+            sprite,
+            new ResourceLocation(domain, "textures/" + typeDir + "/" + rel + ".png"),
+            changedFile);
+    }
+
+    /**
+     * Rebuilds {@code sprite}'s pixel data from the resource at {@code location} and re-uploads just that sprite's
+     * region of {@code map}'s atlas to the GPU. Shared by the vanilla-texture and MCPatcher-CTM paths, which
+     * differ only in how the atlas, sprite name, and resource location are derived.
+     */
+    private static boolean applyPatch(TextureMap map, TextureAtlasSprite sprite, ResourceLocation location,
+        Path changedFile) throws IOException {
         if (sprite.hasAnimationMetadata()) return bail(changedFile, "sprite is animated");
 
-        ResourceLocation location = new ResourceLocation(domain, "textures/" + typeDir + "/" + rel + ".png");
-        IResource resource = mc.getResourceManager()
+        IResource resource = Minecraft.getMinecraft()
+            .getResourceManager()
             .getResource(location);
 
         if (resource.getMetadata("animation") != null) return bail(changedFile, "has .mcmeta animation section");
@@ -179,11 +203,33 @@ public final class SpritePatcher {
         return true;
     }
 
+    /** Joins the path segments from {@code fromIndex} to the end with '/', e.g. {@code foo/bar/baz.png}. */
+    private static String joinSegments(Path path, int fromIndex) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = fromIndex; i < path.getNameCount(); i++) {
+            if (sb.length() > 0) sb.append('/');
+            sb.append(
+                path.getName(i)
+                    .toString());
+        }
+        return sb.toString();
+    }
+
     private static int getMipmapLevels(TextureMap map) {
         try {
             return MIPMAP_LEVELS_FIELD.getInt(map);
         } catch (IllegalAccessException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    private static boolean hasSegment(Path path, String segment) {
+        for (int i = 0; i < path.getNameCount(); i++) {
+            if (segment.equals(
+                path.getName(i)
+                    .toString()))
+                return true;
+        }
+        return false;
     }
 }
