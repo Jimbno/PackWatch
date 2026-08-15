@@ -2,6 +2,8 @@ package com.packwatch.client;
 
 import java.nio.file.Path;
 
+import com.packwatch.PackWatch;
+
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 
@@ -25,10 +27,14 @@ public class ClientTickHandler {
         if (batch == null) return;
 
         if (batch.forceFullReload) {
+            PackWatch.LOG.info(
+                "PackWatch: full reload ({} changed file(s), batch flagged non-patchable)",
+                batch.changedFiles.size());
             TextureReloadTrigger.refresh();
             return;
         }
 
+        long startNanos = System.nanoTime();
         boolean allPatched = true;
         for (Path changedFile : batch.changedFiles) {
             if (!SpritePatcher.tryPatch(changedFile)) {
@@ -38,7 +44,13 @@ public class ClientTickHandler {
         }
 
         if (!allPatched) {
+            PackWatch.LOG.info("PackWatch: full reload (a changed file couldn't be patched in place)");
             TextureReloadTrigger.refresh();
+        } else {
+            PackWatch.LOG.info(
+                "PackWatch: patched {} sprite(s) in place in {} ms (no full reload)",
+                batch.changedFiles.size(),
+                (System.nanoTime() - startNanos) / 1_000_000L);
         }
     }
 }

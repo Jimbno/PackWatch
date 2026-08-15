@@ -56,16 +56,23 @@ public final class SpritePatcher {
         }
     }
 
+    /** Logs why a file can't be patched in place, then returns false so the caller falls back to a full reload. */
+    private static boolean bail(Path changedFile, String reason) {
+        PackWatch.LOG
+            .info("PackWatch: not patching {} in place ({}) -- falling back to full reload", changedFile, reason);
+        return false;
+    }
+
     private static boolean doPatch(Path changedFile) throws IOException {
         Minecraft mc = Minecraft.getMinecraft();
 
         // Anisotropic filtering pads each sprite's stored dimensions by 16px beyond the source image size; we
         // deliberately don't replicate that math here, so just bail to a full reload when it's on.
-        if (mc.gameSettings.anisotropicFiltering > 1) return false;
+        if (mc.gameSettings.anisotropicFiltering > 1) return bail(changedFile, "anisotropic filtering is on");
 
         String fileName = changedFile.getFileName()
             .toString();
-        if (!fileName.endsWith(".png")) return false; // lang/sound/pack.mcmeta/animation .mcmeta/etc.
+        if (!fileName.endsWith(".png")) return bail(changedFile, "not a .png"); // lang/sound/pack.mcmeta/etc.
 
         int assetsIdx = -1;
         for (int i = 0; i < changedFile.getNameCount(); i++) {
@@ -77,11 +84,12 @@ public final class SpritePatcher {
             }
         }
         // assets / <domain> / textures / <blocks|items> / <rest...>
-        if (assetsIdx < 0 || changedFile.getNameCount() <= assetsIdx + 4) return false;
+        if (assetsIdx < 0 || changedFile.getNameCount() <= assetsIdx + 4)
+            return bail(changedFile, "not under assets/<domain>/textures/<blocks|items>/");
         if (!"textures".equals(
             changedFile.getName(assetsIdx + 2)
                 .toString()))
-            return false;
+            return bail(changedFile, "not under a textures/ directory");
 
         String domain = changedFile.getName(assetsIdx + 1)
             .toString();
@@ -94,10 +102,10 @@ public final class SpritePatcher {
         } else if ("items".equals(typeDir)) {
             ITextureObject tex = mc.getTextureManager()
                 .getTexture(TextureMap.locationItemsTexture);
-            if (!(tex instanceof TextureMap)) return false;
+            if (!(tex instanceof TextureMap)) return bail(changedFile, "items texture map unavailable");
             map = (TextureMap) tex;
         } else {
-            return false;
+            return bail(changedFile, "'" + typeDir + "' is not the blocks or items atlas");
         }
 
         StringBuilder relBuilder = new StringBuilder();
@@ -108,7 +116,7 @@ public final class SpritePatcher {
                     .toString());
         }
         String rel = relBuilder.toString();
-        if (!rel.endsWith(".png")) return false;
+        if (!rel.endsWith(".png")) return bail(changedFile, "not a .png");
         rel = rel.substring(0, rel.length() - 4);
 
         // A mod-owned texture must have been registered with an explicit "domain:name" to land under
@@ -119,25 +127,42 @@ public final class SpritePatcher {
         if (sprite == null && "minecraft".equals(domain)) {
             sprite = map.getTextureExtry("minecraft:" + rel);
         }
-        if (sprite == null) return false; // not a currently-registered icon -- let a full reload sort it out
+        if (sprite == null) return bail(changedFile, "'" + iconName + "' is not a currently-registered sprite");
 
-        if (sprite.hasAnimationMetadata()) return false;
+        if (sprite.hasAnimationMetadata()) return bail(changedFile, "sprite is animated");
 
         ResourceLocation location = new ResourceLocation(domain, "textures/" + typeDir + "/" + rel + ".png");
         IResource resource = mc.getResourceManager()
             .getResource(location);
 
-        if (resource.getMetadata("animation") != null) return false;
+        if (resource.getMetadata("animation") != null) return bail(changedFile, "has .mcmeta animation section");
         TextureMetadataSection textureMeta = (TextureMetadataSection) resource.getMetadata("texture");
         if (textureMeta != null && !textureMeta.getListMipmaps()
-            .isEmpty()) return false;
+            .isEmpty()) return bail(changedFile, "has explicit mipmap overrides");
 
         BufferedImage image = ImageIO.read(resource.getInputStream());
-        if (image == null) return false;
-        if (image.getWidth() != sprite.getIconWidth() || image.getHeight() != sprite.getIconHeight()) return false;
+        if (image == null) return bail(changedFile, "ImageIO couldn't decode the PNG (mid-write?)");
+        if (image.getWidth() != sprite.getIconWidth() || image.getHeight() != sprite.getIconHeight()) return bail(
+            changedFile,
+            "size changed (" + image.getWidth()
+                + "x"
+                + image.getHeight()
+                + " vs sprite "
+                + sprite.getIconWidth()
+                + "x"
+                + sprite.getIconHeight()
+                + ")");
 
-        sprite.loadSprite(new BufferedImage[] { image }, null, false);
-        sprite.generateMipmaps(getMipmapLevels(map));
+        // Vanilla's TextureMap#loadTextureAtlas always hands loadSprite a BufferedImage[1 + mipmapLevels] with
+        // only [0] populated, so each frame's pixel array is allocated with a slot for every mip level up front
+        // and generateMipmaps merely fills the empty ones. Passing a length-1 array leaves that per-frame array
+        // too short, and generateMipmapData indexes the missing levels directly -> ArrayIndexOutOfBoundsException
+        // (seen as "Generating mipmaps for frame" on GregTech iconset sprites). Mirror vanilla's sizing exactly.
+        int mipmapLevels = getMipmapLevels(map);
+        BufferedImage[] images = new BufferedImage[1 + mipmapLevels];
+        images[0] = image;
+        sprite.loadSprite(images, null, false);
+        sprite.generateMipmaps(mipmapLevels);
 
         // TextureUtil#bindTexture is package-private; bind directly via GL11 instead (same call it makes
         // internally).

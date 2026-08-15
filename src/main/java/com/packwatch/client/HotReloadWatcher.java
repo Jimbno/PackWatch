@@ -200,9 +200,21 @@ public class HotReloadWatcher {
                     continue; // the directory itself isn't a sprite; its future contents will fire their own events
                 }
 
+                // Only files under an assets/ tree are actually loaded as game resources. Pack-level files like
+                // pack.mcmeta and pack.png (which export tools tend to rewrite on every save, right alongside the
+                // texture) don't affect anything in-world, so a change to them needs neither a patch nor a reload.
+                // Dropping them here keeps a metadata-only save a no-op, and stops a texture+metadata save from
+                // being dragged into a full reload by the metadata. Pure java.nio, so this stays MC-API-free.
+                if (!isUnderAssets(child)) continue;
+
                 // A file appearing/disappearing changes which sprites exist at all, not just their pixels --
                 // SpritePatcher can only safely patch an existing, still-registered sprite's data in place.
                 if (event.kind() != StandardWatchEventKinds.ENTRY_MODIFY) {
+                    PackWatch.LOG.info(
+                        "PackWatch: {} fired {} (not MODIFY) -- will force a full reload for this batch",
+                        child.getFileName(),
+                        event.kind()
+                            .name());
                     forceFullReload.set(true);
                 }
 
@@ -221,5 +233,20 @@ public class HotReloadWatcher {
 
     private synchronized void removeKey(Path base) {
         registeredKeys.remove(base);
+    }
+
+    /**
+     * True if the path lies under an {@code assets/} directory -- i.e. it's an actual loaded game resource rather
+     * than pack-level metadata ({@code pack.mcmeta}, {@code pack.png}, readmes) that has no in-world effect.
+     * Deliberately pure {@code java.nio} so this class stays free of any Minecraft/Forge API.
+     */
+    private static boolean isUnderAssets(Path file) {
+        for (int i = 0; i < file.getNameCount(); i++) {
+            if ("assets".equals(
+                file.getName(i)
+                    .toString()))
+                return true;
+        }
+        return false;
     }
 }
