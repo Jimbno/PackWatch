@@ -1,0 +1,21 @@
+{
+	"modListVersion": 2,
+	"modList": [{
+		"modid": "${modId}",
+		"name": "${modName}",
+		"description": "Live-reloads textures/lang/sounds for Minecraft 1.7.10: whatever resource packs are enabled get watched automatically, and edits show up in the running client without restarting. Built to coexist with GregTech 5 (Unofficial) / GTNH.",
+		"version": "${modVersion}",
+		"mcversion": "${minecraftVersion}",
+		"url": "",
+		"updateUrl": "",
+		"authorList": [],
+		"credits": "Concept and original 1.21 implementation: BasiqueEvangelist's ScaldingHot (https://github.com/BasiqueEvangelist/ScaldingHot). None of the original Fabric/1.21 code is reused here -- 1.7.10 has no data packs, JSON models, or Fabric loader, so this is a from-scratch reimplementation of the same idea on Forge.",
+		"logoFile": "",
+		"screenshots": [],
+		"parent": "",
+		"requiredMods": [],
+		"dependencies": [],
+		"dependants": [],
+		"useDependencyInformation": false
+	}]
+}

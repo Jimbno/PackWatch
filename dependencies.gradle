@@ -1,0 +1,12 @@
+/*
+ * Add your dependencies here. See the GTNH ExampleMod1.7.10 docs for the full list of configurations
+ * (api, implementation, compileOnly, runtimeOnlyNonPublishable, devOnlyNonPublishable, etc).
+ *
+ * GregTech 5 (Unofficial) is a compile-time-only dependency: we want to detect it and hook into its
+ * icon registration when present, but PackWatch must also work without it installed.
+ * Uncomment and pin an actual version once we know which GT5u build we're targeting (GTNH's GT5-Unofficial
+ * fork, published on the GTNH Maven below).
+ */
+dependencies {
+    // compileOnly("com.github.GTNewHorizons:GT5-Unofficial:<version>:dev")
+}
