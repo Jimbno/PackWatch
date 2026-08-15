@@ -1,6 +1,6 @@
 # PackWatch
 
-Edit a texture, hit save, and see it in-game right away — no restart, no F3+T.
+Edit a texture, hit save, and see it in-game right away no restart, no F3+T.
 
 PackWatch keeps an eye on your resource packs while you play. When you change a
 texture, it swaps it in on the spot, so you can tweak something and instantly
@@ -23,16 +23,11 @@ The jar shows up in `build/libs/`. (The first build takes a few minutes.)
 
 1. Put your pack in `resourcepacks/` as a regular folder and turn it on in
    **Options → Resource Packs**, like any other pack.
-2. Edit and save. That's it — it just shows up.
+2. Edit and save.
 
 Turn a pack on or off from that same screen and PackWatch follows along. Zipped
 packs are left alone; keep yours as a folder while you're working on it.
 
-Most texture edits pop in instantly. Bigger changes — resizing a texture, adding
-or removing files, animations, sounds, lang files — do a quick full refresh
+Most texture edits pop in instantly. Bigger changes resizing a texture, adding
+or removing files, animations, sounds, lang files do a quick full refresh
 instead, same as pressing F3+T.
-
-## Handy to know
-
-If something doesn't update the way you expected, check your log for lines
-starting with `PackWatch:` — it says what it did, or why it did a full refresh.
