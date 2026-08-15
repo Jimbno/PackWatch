@@ -31,6 +31,7 @@ public class ClientTickHandler {
                 "PackWatch: full reload ({} changed file(s), batch flagged non-patchable)",
                 batch.changedFiles.size());
             TextureReloadTrigger.refresh();
+            CtmNumberOverlay.reapplyIfActive();
             return;
         }
 
@@ -52,5 +53,7 @@ public class ClientTickHandler {
                 batch.changedFiles.size(),
                 (System.nanoTime() - startNanos) / 1_000_000L);
         }
+
+        CtmNumberOverlay.reapplyIfActive();
     }
 }

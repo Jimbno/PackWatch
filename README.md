@@ -31,3 +31,10 @@ packs are left alone; keep yours as a folder while you're working on it.
 Most texture edits pop in instantly. Bigger changes resizing a texture, adding
 or removing files, animations, sounds, lang files do a quick full refresh
 instead, same as pressing F3+T.
+
+## Seeing which CTM tile is which
+
+Working on connected textures and can't tell which tile a face is actually
+picking? Run `/pw ctm` and every CTM tile gets stamped with its number, right
+there on the block. Run it again to put everything back.
+
