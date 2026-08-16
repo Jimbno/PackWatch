@@ -1,0 +1,69 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history for `git describe` (the version) and for the nightly tag below.
+          fetch-depth: 0
+
+      - name: Has anything changed since the last nightly?
+        id: check
+        run: |
+          previous=$(git rev-parse -q --verify 'refs/tags/nightly^{commit}' || true)
+          current=$(git rev-parse HEAD)
+          # Comparing against the last nightly's commit rather than a 24h window, so a
+          # skipped or failed run doesn't silently drop the commits it would have built.
+          if [ "$previous" = "$current" ]; then
+            echo "No commits since the last nightly ($current) -- nothing to build."
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-java@v4
+        if: steps.check.outputs.build == 'true'
+        with:
+          distribution: temurin
+          java-version-file: .java-version
+
+      - uses: gradle/actions/setup-gradle@v4
+        if: steps.check.outputs.build == 'true'
+
+      - name: Build
+        if: steps.check.outputs.build == 'true'
+        run: ./gradlew build
+
+      - name: Locate the jar
+        id: jar
+        if: steps.check.outputs.build == 'true'
+        run: |
+          main=$(ls build/libs/*.jar | grep -Ev -- '-(dev|sources)\.jar$' | head -n1)
+          test -n "$main" || { echo "no jar in build/libs"; ls -la build/libs; exit 1; }
+          echo "main=$main" >> "$GITHUB_OUTPUT"
+
+      - name: Move the nightly tag
+        if: steps.check.outputs.build == 'true'
+        run: |
+          git tag -f nightly
+          git push -f origin nightly
+
+      - uses: softprops/action-gh-release@v2
+        if: steps.check.outputs.build == 'true'
+        with:
+          tag_name: nightly
+          name: Nightly
+          prerelease: true
+          # Built from whatever is on main, so it is deliberately not a version tag.
+          body: "Automatic build of `${{ github.sha }}`. For the tested jar, use the latest version release."
+          files: ${{ steps.jar.outputs.main }}
