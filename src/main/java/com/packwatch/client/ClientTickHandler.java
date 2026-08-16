@@ -25,6 +25,8 @@ public class ClientTickHandler {
     public void onClientTick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
 
+        CtmNumberOverlay.syncToDebugScreen();
+
         HotReloadWatcher.ChangeBatch batch = watcher.pollChanges();
         if (batch == null) return;
 

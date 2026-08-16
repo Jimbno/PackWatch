@@ -25,7 +25,7 @@ public class HotReloadCommand extends CommandBase {
 
     @Override
     public String getCommandUsage(ICommandSender sender) {
-        return "/pw ctm";
+        return "/pw ctm [f3]";
     }
 
     @Override
@@ -36,6 +36,7 @@ public class HotReloadCommand extends CommandBase {
     @Override
     public List<String> addTabCompletionOptions(ICommandSender sender, String[] args) {
         if (args.length == 1) return getListOfStringsMatchingLastWord(args, "ctm");
+        if (args.length == 2 && args[0].equals("ctm")) return getListOfStringsMatchingLastWord(args, "f3");
         return Collections.emptyList();
     }
 
@@ -43,6 +44,11 @@ public class HotReloadCommand extends CommandBase {
     public void processCommand(ICommandSender sender, String[] args) {
         if (args.length == 0 || !args[0].equals("ctm")) {
             sender.addChatMessage(new ChatComponentText(getCommandUsage(sender)));
+            return;
+        }
+
+        if (args.length >= 2 && args[1].equals("f3")) {
+            sender.addChatMessage(new ChatComponentText(CtmNumberOverlay.toggleFollowDebugScreen()));
             return;
         }
 
