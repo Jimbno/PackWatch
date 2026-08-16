@@ -1,6 +1,8 @@
 package com.packwatch.client;
 
 import java.nio.file.Path;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 import com.packwatch.PackWatch;
 
@@ -35,9 +37,11 @@ public class ClientTickHandler {
             return;
         }
 
+        Set<Path> changedFiles = dropMetaSavedWithItsTexture(batch.changedFiles);
+
         long startNanos = System.nanoTime();
         boolean allPatched = true;
-        for (Path changedFile : batch.changedFiles) {
+        for (Path changedFile : changedFiles) {
             if (!SpritePatcher.tryPatch(changedFile)) {
                 allPatched = false;
                 break;
@@ -50,10 +54,28 @@ public class ClientTickHandler {
         } else {
             PackWatch.LOG.info(
                 "PackWatch: patched {} sprite(s) in place in {} ms (no full reload)",
-                batch.changedFiles.size(),
+                changedFiles.size(),
                 (System.nanoTime() - startNanos) / 1_000_000L);
         }
 
         CtmNumberOverlay.reapplyIfActive();
+    }
+
+    /**
+     * Export tools tend to rewrite {@code foo.png.mcmeta} every time they write {@code foo.png}. On its own a
+     * .mcmeta means a full reload, but patching the .png re-reads its metadata from disk anyway, so when both
+     * land in one batch the .mcmeta is already covered and would only force the reload we just avoided. A
+     * .mcmeta changing on its own still reloads -- that's the case where the animation itself was edited.
+     */
+    private static Set<Path> dropMetaSavedWithItsTexture(Set<Path> changedFiles) {
+        Set<Path> kept = new LinkedHashSet<Path>();
+        for (Path changedFile : changedFiles) {
+            String name = changedFile.getFileName()
+                .toString();
+            if (name.endsWith(".mcmeta")
+                && changedFiles.contains(changedFile.resolveSibling(name.substring(0, name.length() - 7)))) continue;
+            kept.add(changedFile);
+        }
+        return kept;
     }
 }

@@ -28,9 +28,11 @@ The jar shows up in `build/libs/`. (The first build takes a few minutes.)
 Turn a pack on or off from that same screen and PackWatch follows along. Zipped
 packs are left alone; keep yours as a folder while you're working on it.
 
-Most texture edits pop in instantly. Bigger changes resizing a texture, adding
-or removing files, animations, sounds, lang files do a quick full refresh
-instead, same as pressing F3+T.
+Most texture edits pop in instantly, animated ones included you can add or
+remove frames from a strip and it still swaps in on the spot. Bigger changes
+resizing a texture, adding or removing files, editing a `.mcmeta` or
+`.properties`, sounds, lang files do a quick full refresh instead, same as
+pressing F3+T.
 
 ## Seeing which CTM tile is which
 
