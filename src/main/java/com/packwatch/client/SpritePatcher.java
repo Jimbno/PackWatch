@@ -4,6 +4,8 @@ import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import javax.imageio.ImageIO;
@@ -37,6 +39,9 @@ public final class SpritePatcher {
     // field is "mipmapLevels" at dev time and "field_147636_j" in a packaged modpack.
     private static final Field MIPMAP_LEVELS_FIELD = ReflectionHelper
         .findField(TextureMap.class, "mipmapLevels", "field_147636_j");
+
+    private static final Field REGISTERED_SPRITES_FIELD = ReflectionHelper
+        .findField(TextureMap.class, "mapRegisteredSprites", "field_110574_e");
 
     private SpritePatcher() {}
 
@@ -89,14 +94,22 @@ public final class SpritePatcher {
             String relFromDomain = joinSegments(changedFile, assetsIdx + 2);
 
             TextureMap blocks = mc.getTextureMapBlocks();
-            TextureAtlasSprite sprite = blocks.getTextureExtry(domain + ":" + relFromDomain);
-            if (sprite == null)
-                return bail(changedFile, "CTM tile '" + domain + ":" + relFromDomain + "' is not a registered sprite");
+            String iconName = domain + ":" + relFromDomain;
 
-            // A generated tile's whole set derives from its 5 sources; any other tile patches alone.
-            if (CompactCtmExpander.isGeneratedSprite(sprite))
-                return patchCompactCtmSet(blocks, changedFile, domain, relFromDomain);
-            return applyPatch(blocks, sprite, new ResourceLocation(domain, relFromDomain), changedFile);
+            // A mod and a pack can declare the same CTM set under paths differing only in case (GregTech's
+            // coils/nichrome vs a pack's Coils/Nichrome). Both stitch as separate sprites that a case-insensitive
+            // filesystem feeds from this one file, and the renderer may draw either, so patch every one of them.
+            List<TextureAtlasSprite> targets = spritesNamedIgnoringCase(blocks, iconName);
+            if (targets.isEmpty()) return bail(changedFile, "CTM tile '" + iconName + "' is not a registered sprite");
+            if (targets.size() > 1) PackWatch.LOG.info(
+                "PackWatch: '{}' is registered {} times under names differing only in case",
+                iconName,
+                targets.size());
+
+            for (TextureAtlasSprite target : targets) {
+                if (!patchCtmSprite(blocks, target, changedFile)) return false;
+            }
+            return true;
         }
 
         if (!"textures".equals(category)) return bail(changedFile, "not under a textures/ or mcpatcher/ctm/ path");
@@ -233,6 +246,37 @@ public final class SpritePatcher {
         if (patched == 0) return bail(changedFile, "none of the set's expanded tiles are registered sprites");
         PackWatch.LOG.info("PackWatch: re-expanded compact CTM set {} -- patched {} tile(s)", dir, patched);
         return true;
+    }
+
+    /** Every registered sprite whose name matches {@code iconName} ignoring case, the exact match first. */
+    private static List<TextureAtlasSprite> spritesNamedIgnoringCase(TextureMap map, String iconName) {
+        List<TextureAtlasSprite> found = new ArrayList<TextureAtlasSprite>();
+
+        TextureAtlasSprite exact = map.getTextureExtry(iconName);
+        if (exact != null) found.add(exact);
+
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, TextureAtlasSprite> registered = (Map<String, TextureAtlasSprite>) REGISTERED_SPRITES_FIELD
+                .get(map);
+            for (Map.Entry<String, TextureAtlasSprite> entry : registered.entrySet()) {
+                if (!entry.getKey()
+                    .equalsIgnoreCase(iconName)) continue;
+                if (!found.contains(entry.getValue())) found.add(entry.getValue());
+            }
+        } catch (IllegalAccessException e) {
+            PackWatch.LOG.warn("Couldn't scan the atlas for case-variant sprites", e);
+        }
+        return found;
+    }
+
+    /** Patches one CTM sprite from its own resource path, re-expanding the set if it's a generated tile. */
+    private static boolean patchCtmSprite(TextureMap map, TextureAtlasSprite sprite, Path changedFile)
+        throws IOException {
+        ResourceLocation location = new ResourceLocation(sprite.getIconName());
+        if (!CompactCtmExpander.isGeneratedSprite(sprite)) return applyPatch(map, sprite, location, changedFile);
+
+        return patchCompactCtmSet(map, changedFile, location.getResourceDomain(), location.getResourcePath());
     }
 
     static BufferedImage readImageOrNull(IResourceManager resourceManager, ResourceLocation location) {
