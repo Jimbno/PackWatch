@@ -2,14 +2,9 @@ package com.packwatch.client;
 
 import java.awt.image.BufferedImage;
 import java.io.IOException;
-import java.io.InputStream;
 import java.lang.reflect.Field;
-import java.nio.file.DirectoryStream;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Locale;
 import java.util.Map;
-import java.util.Properties;
 
 import javax.imageio.ImageIO;
 
@@ -93,11 +88,10 @@ public final class SpritePatcher {
         if (("mcpatcher".equals(category) || "optifine".equals(category)) && hasSegment(changedFile, "ctm")) {
             String relFromDomain = joinSegments(changedFile, assetsIdx + 2);
 
-            String generatedMethod = generatedCtmMethod(changedFile);
-            if (generatedMethod != null)
-                return patchCompactCtmSet(mc.getTextureMapBlocks(), changedFile, domain, relFromDomain);
-
             TextureMap blocks = mc.getTextureMapBlocks();
+            if (isExpandedCompactSet(blocks, domain, relFromDomain))
+                return patchCompactCtmSet(blocks, changedFile, domain, relFromDomain);
+
             TextureAtlasSprite sprite = blocks.getTextureExtry(domain + ":" + relFromDomain);
             if (sprite == null)
                 return bail(changedFile, "CTM tile '" + domain + ":" + relFromDomain + "' is not a registered sprite");
@@ -245,40 +239,37 @@ public final class SpritePatcher {
     }
 
     /**
-     * @return the offending method name, or null if this set's tiles are rendered as-is
+     * True if the atlas holds a tile of this set that no pack supplies a file for -- only the compact_expanded
+     * method produces those (the same shape test CtmNumberOverlay uses). Plain method=compact keeps just the
+     * source tiles in the atlas and composes quadrants from their regions at render time, and a set's tiles=
+     * property can name any files it likes (0.png to 4.png is merely the convention) -- so everything that isn't
+     * expanded, whatever its .properties say, renders straight from the changed tile's own sprite and patches in
+     * place like any other.
      */
-    private static String generatedCtmMethod(Path changedFile) {
-        Path dir = changedFile.getParent();
-        if (dir == null) return null;
+    private static boolean isExpandedCompactSet(TextureMap map, String domain, String relFromDomain) {
+        int lastSlash = relFromDomain.lastIndexOf('/');
+        if (lastSlash < 0) return false;
+        String dir = relFromDomain.substring(0, lastSlash);
 
-        DirectoryStream<Path> propertyFiles = null;
-        try {
-            propertyFiles = Files.newDirectoryStream(dir, "*.properties");
-            for (Path propertyFile : propertyFiles) {
-                Properties properties = new Properties();
-                InputStream in = Files.newInputStream(propertyFile);
-                try {
-                    properties.load(in);
-                } finally {
-                    in.close();
-                }
-
-                String method = properties.getProperty("method");
-                if (method == null) continue;
-                method = method.trim()
-                    .toLowerCase(Locale.ROOT);
-                if (method.contains("compact")) return method;
-            }
-        } catch (IOException e) {
-            PackWatch.LOG.warn("Couldn't read the CTM properties next to {}", changedFile, e);
-        } finally {
-            if (propertyFiles != null) {
-                try {
-                    propertyFiles.close();
-                } catch (IOException ignored) {}
-            }
+        IResourceManager resourceManager = Minecraft.getMinecraft()
+            .getResourceManager();
+        for (int i = CompactCtmExpander.COMPACT_TILES; i < CompactCtmExpander.EXPANDED_TILES; i++) {
+            ResourceLocation location = new ResourceLocation(domain, dir + "/" + i + ".png");
+            if (map.getTextureExtry(location.toString()) == null) continue;
+            if (!resourceExists(resourceManager, location)) return true;
         }
-        return null;
+        return false;
+    }
+
+    private static boolean resourceExists(IResourceManager resourceManager, ResourceLocation location) {
+        try {
+            resourceManager.getResource(location)
+                .getInputStream()
+                .close();
+            return true;
+        } catch (IOException e) {
+            return false;
+        }
     }
 
     private static boolean patchViaCustomLoader(TextureMap map, TextureAtlasSprite sprite,
