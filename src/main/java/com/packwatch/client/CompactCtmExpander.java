@@ -3,6 +3,8 @@ package com.packwatch.client;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+
 /**
  * Expands a compact CTM set's 5 tiles into the 47 the renderer actually samples, mirroring Angelica's
  * {@code com.prupe.mcpatcher.ctm.CTMTextureGenerator}. MCPatcher does this once while the atlas is stitched, so
@@ -40,6 +42,17 @@ final class CompactCtmExpander {
         { CORN, CORN, CORN, CORN } };
 
     private CompactCtmExpander() {}
+
+    /**
+     * True for a tile Angelica's compact_expanded method generated at stitch time -- generation ignores any
+     * files at the generated indices, so the sprite's class (matched by name; no compile-time Angelica dep) is
+     * the only reliable signal, not the pack's files.
+     */
+    static boolean isGeneratedSprite(TextureAtlasSprite sprite) {
+        return "GeneratedCTMAtlasSprite".equals(
+            sprite.getClass()
+                .getSimpleName());
+    }
 
     /** @return the 47 expanded tiles, or null if the compact tiles aren't a usable set. */
     static BufferedImage[] expand(BufferedImage[] compact) {

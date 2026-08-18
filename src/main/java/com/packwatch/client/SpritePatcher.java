@@ -89,12 +89,13 @@ public final class SpritePatcher {
             String relFromDomain = joinSegments(changedFile, assetsIdx + 2);
 
             TextureMap blocks = mc.getTextureMapBlocks();
-            if (isExpandedCompactSet(blocks, domain, relFromDomain))
-                return patchCompactCtmSet(blocks, changedFile, domain, relFromDomain);
-
             TextureAtlasSprite sprite = blocks.getTextureExtry(domain + ":" + relFromDomain);
             if (sprite == null)
                 return bail(changedFile, "CTM tile '" + domain + ":" + relFromDomain + "' is not a registered sprite");
+
+            // A generated tile's whole set derives from its 5 sources; any other tile patches alone.
+            if (CompactCtmExpander.isGeneratedSprite(sprite))
+                return patchCompactCtmSet(blocks, changedFile, domain, relFromDomain);
             return applyPatch(blocks, sprite, new ResourceLocation(domain, relFromDomain), changedFile);
         }
 
@@ -152,20 +153,26 @@ public final class SpritePatcher {
 
         IResource resource = resourceManager.getResource(location);
 
-        AnimationMetadataSection animation = (AnimationMetadataSection) resource.getMetadata("animation");
+        AnimationMetadataSection animation;
+        BufferedImage image;
+        try {
+            animation = (AnimationMetadataSection) resource.getMetadata("animation");
 
-        // Gaining or losing an animation changes atlas-level registration, not just pixels: TextureMap keeps
-        // animated sprites in listAnimatedSprites and ticks them, and membership is only decided at stitch time.
-        // Patching across that boundary would either leave a ticking sprite with null metadata (NPE in
-        // updateAnimation) or a newly-animated one that never ticks, so it stays a full reload.
-        if (sprite.hasAnimationMetadata() != (animation != null))
-            return bail(changedFile, animation != null ? "gained an animation" : "lost its animation");
+            // Gaining or losing an animation changes atlas-level registration, not just pixels: TextureMap keeps
+            // animated sprites in listAnimatedSprites and ticks them, and membership is only decided at stitch
+            // time. Patching across that boundary would either leave a ticking sprite with null metadata (NPE in
+            // updateAnimation) or a newly-animated one that never ticks, so it stays a full reload.
+            if (sprite.hasAnimationMetadata() != (animation != null))
+                return bail(changedFile, animation != null ? "gained an animation" : "lost its animation");
 
-        TextureMetadataSection textureMeta = (TextureMetadataSection) resource.getMetadata("texture");
-        if (textureMeta != null && !textureMeta.getListMipmaps()
-            .isEmpty()) return bail(changedFile, "has explicit mipmap overrides");
+            TextureMetadataSection textureMeta = (TextureMetadataSection) resource.getMetadata("texture");
+            if (textureMeta != null && !textureMeta.getListMipmaps()
+                .isEmpty()) return bail(changedFile, "has explicit mipmap overrides");
 
-        BufferedImage image = ImageIO.read(resource.getInputStream());
+            image = ImageIO.read(resource.getInputStream());
+        } finally {
+            closeQuietly(resource);
+        }
         if (image == null) return bail(changedFile, "ImageIO couldn't decode the PNG (mid-write?)");
 
         String sizeProblem = animation == null ? staticSizeProblem(image, sprite) : frameStripProblem(image, sprite);
@@ -228,48 +235,34 @@ public final class SpritePatcher {
         return true;
     }
 
-    private static BufferedImage readImageOrNull(IResourceManager resourceManager, ResourceLocation location) {
+    static BufferedImage readImageOrNull(IResourceManager resourceManager, ResourceLocation location) {
+        IResource resource;
         try {
-            return ImageIO.read(
-                resourceManager.getResource(location)
-                    .getInputStream());
+            resource = resourceManager.getResource(location);
         } catch (IOException e) {
             return null;
+        }
+        try {
+            return ImageIO.read(resource.getInputStream());
+        } catch (IOException e) {
+            return null;
+        } finally {
+            closeQuietly(resource);
         }
     }
 
     /**
-     * True if the atlas holds a tile of this set that no pack supplies a file for -- only the compact_expanded
-     * method produces those (the same shape test CtmNumberOverlay uses). Plain method=compact keeps just the
-     * source tiles in the atlas and composes quadrants from their regions at render time, and a set's tiles=
-     * property can name any files it likes (0.png to 4.png is merely the convention) -- so everything that isn't
-     * expanded, whatever its .properties say, renders straight from the changed tile's own sprite and patches in
-     * place like any other.
+     * getResource eagerly opens the .mcmeta stream too, and getMetadata is the only path that closes it; left
+     * open, both handles keep the pack's files locked on Windows.
      */
-    private static boolean isExpandedCompactSet(TextureMap map, String domain, String relFromDomain) {
-        int lastSlash = relFromDomain.lastIndexOf('/');
-        if (lastSlash < 0) return false;
-        String dir = relFromDomain.substring(0, lastSlash);
-
-        IResourceManager resourceManager = Minecraft.getMinecraft()
-            .getResourceManager();
-        for (int i = CompactCtmExpander.COMPACT_TILES; i < CompactCtmExpander.EXPANDED_TILES; i++) {
-            ResourceLocation location = new ResourceLocation(domain, dir + "/" + i + ".png");
-            if (map.getTextureExtry(location.toString()) == null) continue;
-            if (!resourceExists(resourceManager, location)) return true;
-        }
-        return false;
-    }
-
-    private static boolean resourceExists(IResourceManager resourceManager, ResourceLocation location) {
+    static void closeQuietly(IResource resource) {
         try {
-            resourceManager.getResource(location)
-                .getInputStream()
+            resource.getInputStream()
                 .close();
-            return true;
-        } catch (IOException e) {
-            return false;
-        }
+        } catch (Exception ignored) {}
+        try {
+            resource.getMetadata("animation");
+        } catch (Exception ignored) {}
     }
 
     private static boolean patchViaCustomLoader(TextureMap map, TextureAtlasSprite sprite,

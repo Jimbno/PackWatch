@@ -372,26 +372,20 @@ public final class CtmNumberOverlay {
         return true;
     }
 
-    /** True if the atlas has a tile the pack has no file for, which only an expanded set produces. */
+    /** True if the atlas holds MCPatcher-generated tiles for this set, which only compact_expanded produces. */
     private static boolean looksExpanded(TextureMap blocks, String domain, String dir) {
-        for (int i = CompactCtmExpander.COMPACT_TILES; i < CompactCtmExpander.EXPANDED_TILES; i++) {
-            String name = domain + ":" + dir + "/" + i + ".png";
-            if (blocks.getTextureExtry(name) == null) continue;
-            if (readResource(new ResourceLocation(domain, dir + "/" + i + ".png")) == null) return true;
+        for (int i = 0; i < CompactCtmExpander.EXPANDED_TILES; i++) {
+            TextureAtlasSprite sprite = blocks.getTextureExtry(domain + ":" + dir + "/" + i + ".png");
+            if (sprite != null && CompactCtmExpander.isGeneratedSprite(sprite)) return true;
         }
         return false;
     }
 
     private static BufferedImage readResource(ResourceLocation location) {
-        try {
-            return ImageIO.read(
-                Minecraft.getMinecraft()
-                    .getResourceManager()
-                    .getResource(location)
-                    .getInputStream());
-        } catch (IOException e) {
-            return null;
-        }
+        return SpritePatcher.readImageOrNull(
+            Minecraft.getMinecraft()
+                .getResourceManager(),
+            location);
     }
 
     /**
@@ -414,21 +408,14 @@ public final class CtmNumberOverlay {
         int colon = spriteName.indexOf(':');
         if (colon < 0) return null;
 
-        try {
-            BufferedImage image = ImageIO.read(
-                Minecraft.getMinecraft()
-                    .getResourceManager()
-                    .getResource(new ResourceLocation(spriteName.substring(0, colon), spriteName.substring(colon + 1)))
-                    .getInputStream());
-            if (image == null || image.getWidth() != sprite.getIconWidth()) return null;
+        BufferedImage image = readResource(
+            new ResourceLocation(spriteName.substring(0, colon), spriteName.substring(colon + 1)));
+        if (image == null || image.getWidth() != sprite.getIconWidth()) return null;
 
-            // An animated tile's file is a strip of frames, so only its width has to match the atlas region.
-            int height = sprite.getIconHeight();
-            if (image.getHeight() != height && (height <= 0 || image.getHeight() % height != 0)) return null;
-            return image;
-        } catch (IOException e) {
-            return null;
-        }
+        // An animated tile's file is a strip of frames, so only its width has to match the atlas region.
+        int height = sprite.getIconHeight();
+        if (image.getHeight() != height && (height <= 0 || image.getHeight() % height != 0)) return null;
+        return image;
     }
 
     /**
