@@ -12,6 +12,7 @@ import javax.imageio.ImageIO;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.ITextureObject;
+import net.minecraft.client.renderer.texture.SimpleTexture;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.renderer.texture.TextureMap;
 import net.minecraft.client.renderer.texture.TextureUtil;
@@ -128,7 +129,7 @@ public final class SpritePatcher {
             if (!(tex instanceof TextureMap)) return bail(changedFile, "items texture map unavailable");
             map = (TextureMap) tex;
         } else {
-            return bail(changedFile, "'" + typeDir + "' is not the blocks or items atlas");
+            return patchStandaloneTexture(changedFile, domain, joinSegments(changedFile, assetsIdx + 2));
         }
 
         String rel = joinSegments(changedFile, assetsIdx + 4);
@@ -149,6 +150,36 @@ public final class SpritePatcher {
             sprite,
             new ResourceLocation(domain, "textures/" + typeDir + "/" + rel + ".png"),
             changedFile);
+    }
+
+    /**
+     * GUI, entity and other non-atlas textures stand alone, so vanilla's own loadTexture re-reads and re-uploads
+     * them whatever their new size -- none of the atlas constraints apply. Not covered: a sub-rect driven by an
+     * mcpatcher/anim animation, which keeps re-uploading the strip it cached at pack load.
+     */
+    private static boolean patchStandaloneTexture(Path changedFile, String domain, String relFromDomain)
+        throws IOException {
+        Minecraft mc = Minecraft.getMinecraft();
+        ResourceLocation location = new ResourceLocation(domain, relFromDomain);
+
+        ITextureObject texture = mc.getTextureManager()
+            .getTexture(location);
+        if (texture == null) {
+            PackWatch.LOG
+                .info("PackWatch: '{}' isn't loaded yet, so it reads from disk when it's first bound", location);
+            return true;
+        }
+        if (!(texture instanceof SimpleTexture)) return bail(
+            changedFile,
+            "'" + location
+                + "' is a "
+                + texture.getClass()
+                    .getSimpleName()
+                + ", not a plain texture");
+
+        texture.loadTexture(mc.getResourceManager());
+        PackWatch.LOG.info("PackWatch: reloaded standalone texture '{}'", location);
+        return true;
     }
 
     private static boolean applyPatch(TextureMap map, TextureAtlasSprite sprite, ResourceLocation location,
