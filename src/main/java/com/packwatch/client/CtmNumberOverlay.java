@@ -35,8 +35,8 @@ public final class CtmNumberOverlay {
     private static final Field ANIMATION_METADATA_FIELD = ReflectionHelper
         .findField(TextureAtlasSprite.class, "animationMetadata", "field_110982_k");
 
-    private static final String SHEET_PATH = "/assets/packwatch/textures/ctm_numbers.png";
-    private static final String QUADRANT_SHEET_PATH = "/assets/packwatch/textures/compact_numbers.png";
+    private static final String SHEET_PATH = "/packwatch/ctm_numbers.png";
+    private static final String QUADRANT_SHEET_PATH = "/packwatch/compact_numbers.png";
 
     /** A full MCPatcher CTM set is tiles 0-46. */
     private static final int CTM_TILE_COUNT = 47;

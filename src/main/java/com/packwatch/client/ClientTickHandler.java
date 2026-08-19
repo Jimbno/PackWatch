@@ -4,6 +4,8 @@ import java.nio.file.Path;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
+import net.minecraft.client.Minecraft;
+
 import com.packwatch.PackWatch;
 
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
@@ -24,6 +26,10 @@ public class ClientTickHandler {
     @SubscribeEvent
     public void onClientTick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
+
+        // Patching and reloading stay off until a world is up: there is nothing on screen to update before
+        // that, and a reload during startup or the menu can collide with another mod's resource work.
+        if (Minecraft.getMinecraft().theWorld == null) return;
 
         CtmNumberOverlay.syncToDebugScreen();
 
